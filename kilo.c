@@ -6,52 +6,88 @@
 #include <termios.h>
 #include <unistd.h>
 
+/*** defines ***/
+#define CTRL_KEY(k) ((k) & 0x1f)
+
 /*** data ***/
 struct termios orig_termios;
 
 /*** terminal ***/
+void die(const char *s)
+{
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
 
-/*Error Handling*/
-void die(const char *s) {
   perror(s);
   exit(1);
 }
 
-void disableRawTerminalMode(){
+void disableRawTerminalMode()
+{
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
     die("tcsetattr");
 }
 
-void enableRawTerminalMode() {
-    if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) die("tcgetattr");
-    tcgetattr(STDIN_FILENO, &orig_termios);
-    atexit(disableRawTerminalMode);
+void enableRawTerminalMode()
+{
+  if (tcgetattr(STDIN_FILENO, &orig_termios) == -1)
+    die("tcgetattr");
+  atexit(disableRawTerminalMode);
 
   struct termios raw = orig_termios;
   raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
   raw.c_cflag |= (CS8);
-  raw.c_lflag &= ~(ECHO | ICANON |IEXTEN| ISIG );
+  raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
   raw.c_cc[VMIN] = 0;
   raw.c_cc[VTIME] = 1;
 
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
+    die("tcsetattr");
+}
+
+char editorReadKey()
+{
+  int nread;
+  char c;
+  while ((nread = read(STDIN_FILENO, &c, 1)) != 1)
+  {
+    if (nread == -1 && errno != EAGAIN)
+      die("read");
+  }
+  return c;
+}
+
+/*** input ***/
+void editorProcessKeypress()
+{
+  char c = editorReadKey();
+  switch (c)
+  {
+  case 'q':
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+    exit(0);
+    break;
+  }
+}
+
+/*** output ***/
+void editorRefreshScreen()
+{
+  write(STDOUT_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
 }
 
 /*** init ***/
+int main()
+{
+  enableRawTerminalMode();
 
-int main(){
-enableRawTerminalMode();
-
-  while (1) {
-    char c = '\0';
-    if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN) die("read");
-      if(iscntrl(c)){
-          printf("%d\r\n", c);
-    } else {
-        printf("%d ('%c')\r\n", c, c);
-    }
-    if(c=='q') break;
-};
+  while (1)
+  {
+    editorRefreshScreen();
+    editorProcessKeypress();
+  };
   return 0;
 }
